@@ -24,7 +24,14 @@ const app = new Elysia()
     }
   })
 
-  .get("/producto", () => {
+  // Para editar o eliminar
+  // .options("/prodcuto", () => {
+  //    set.headers = {"access-control-allow-methods: GET,Put y eso"}
+  // })
+
+  .get("/producto", ({ set }) => {
+    set.headers = { "access-control-allow-origin": "*" };
+
     try {
       const solicitudDeProductos = db.query(`
         SELECT
@@ -54,6 +61,7 @@ const app = new Elysia()
   .post(
     "/producto",
     ({
+      set,
       body: {
         nuevo_nombre,
         nuevo_precio_venta,
@@ -61,6 +69,8 @@ const app = new Elysia()
         nuevo_id_categoria,
       },
     }) => {
+      set.headers = { "access-control-allow-origin": "*" };
+
       try {
         const solicitudDeNuevoProducto = db.query(`
         INSERT INTO productos
