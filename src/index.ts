@@ -24,11 +24,6 @@ const app = new Elysia()
     }
   })
 
-  // Para editar o eliminar
-  // .options("/prodcuto", () => {
-  //    set.headers = {"access-control-allow-methods: GET,Put y eso"}
-  // })
-
   .get("/producto", ({ set }) => {
     set.headers = { "access-control-allow-origin": "*" };
 
@@ -37,6 +32,7 @@ const app = new Elysia()
         SELECT
           id_producto,
           nombre_producto,
+          A.descripcion,
           url_imagen,
           precio,
           stock,
@@ -50,7 +46,7 @@ const app = new Elysia()
 
       const productos = solicitudDeProductos.all();
 
-      return productos;
+      return status(200, productos);
     } catch (error) {
       console.error(`Error al obtener al producto: ${error}`);
 
@@ -67,6 +63,8 @@ const app = new Elysia()
         nuevo_precio_venta,
         nuevo_stock_actual,
         nuevo_id_categoria,
+        nuevo_descripcion,
+        nuevo_url_img,
       },
     }) => {
       set.headers = { "access-control-allow-origin": "*" };
@@ -74,19 +72,21 @@ const app = new Elysia()
       try {
         const solicitudDeNuevoProducto = db.query(`
         INSERT INTO productos
-          (nombre_producto, precio, stock, id_categoria)
+          (nombre_producto, descripcion, url_imagen,precio, stock, id_categoria)
         VALUES
-          ($nombre_producto, $precio, $stock, $id_categoria);
+          ($nombre_producto, $descripcion, $url_imagen, $precio, $stock, $id_categoria);
       `);
 
         solicitudDeNuevoProducto.run({
           $nombre_producto: nuevo_nombre,
+          $descripcion: nuevo_descripcion ?? null,
+          $url_imagen: nuevo_url_img ?? null,
           $precio: nuevo_precio_venta,
           $stock: nuevo_stock_actual,
           $id_categoria: nuevo_id_categoria,
         });
 
-        return "Agregado correctamente";
+        return status(201, "Creado exitosamente");
       } catch (error) {
         console.error(`Error al agregar: ${error}`);
 
@@ -96,6 +96,8 @@ const app = new Elysia()
     {
       body: t.Object({
         nuevo_nombre: t.String(),
+        nuevo_descripcion: t.Optional(t.String()),
+        nuevo_url_img: t.Optional(t.String()),
         nuevo_precio_venta: t.Numeric(),
         nuevo_stock_actual: t.Integer(),
         nuevo_id_categoria: t.Integer(),
@@ -109,7 +111,7 @@ const app = new Elysia()
       try {
         const solicitudDeProductoPorId = db.query(`
           SELECT
-           id_producto ,nombre_producto, url_imagen, precio, stock, nombre_categoria
+           id_producto ,nombre_producto, A.descripcion, url_imagen, precio, stock, nombre_categoria
           FROM
             productos AS A
               JOIN
@@ -121,7 +123,7 @@ const app = new Elysia()
 
         const producto = solicitudDeProductoPorId.get(id);
 
-        return producto;
+        return producto ?? status(404, "Producto no encontrado");
       } catch (error) {
         console.error(`Error al obtener al producto: ${error}`);
 
@@ -140,6 +142,7 @@ const app = new Elysia()
       body: {
         id_categoria,
         nombre_producto,
+        descripcion,
         precio_venta,
         stock_actual,
         url_imagen,
@@ -179,6 +182,10 @@ const app = new Elysia()
           camposParaActualizar.push("nombre_producto = $nombre");
           valorParaAgregar.push(nombre_producto);
         }
+        if (descripcion !== undefined) {
+          camposParaActualizar.push("descripcion = $descripcion");
+          valorParaAgregar.push(descripcion);
+        }
         if (url_imagen !== undefined) {
           camposParaActualizar.push("url_imagen = $url_imagen");
           valorParaAgregar.push(url_imagen);
@@ -203,7 +210,7 @@ const app = new Elysia()
         valorParaAgregar.push(id);
 
         const putQuery = db.query(`
-          UPDATE producto_productos
+          UPDATE productos
           SET ${camposParaActualizar.join(", ")}
           WHERE id_producto = ?;
         `);
