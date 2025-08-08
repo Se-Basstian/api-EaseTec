@@ -1,4 +1,5 @@
 import Database from "bun:sqlite";
+import cors from "@elysiajs/cors";
 import swagger from "@elysiajs/swagger";
 import { Elysia, status, t } from "elysia";
 
@@ -7,6 +8,8 @@ const db = new Database(rutaDeBaseDeDatos);
 
 const app = new Elysia()
   .use(swagger())
+
+  .use(cors())
 
   .get("/", () => "Api para los productos de Eese-Tec")
 
@@ -24,9 +27,7 @@ const app = new Elysia()
     }
   })
 
-  .get("/producto", ({ set }) => {
-    set.headers = { "access-control-allow-origin": "*" };
-
+  .get("/producto", () => {
     try {
       const solicitudDeProductos = db.query(`
         SELECT
@@ -57,7 +58,6 @@ const app = new Elysia()
   .post(
     "/producto",
     ({
-      set,
       body: {
         nuevo_nombre,
         nuevo_precio_venta,
@@ -67,8 +67,6 @@ const app = new Elysia()
         nuevo_url_img,
       },
     }) => {
-      set.headers = { "access-control-allow-origin": "*" };
-
       try {
         const solicitudDeNuevoProducto = db.query(`
         INSERT INTO productos
