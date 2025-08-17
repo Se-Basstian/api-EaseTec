@@ -1,10 +1,12 @@
-import Database from "bun:sqlite";
 import cors from "@elysiajs/cors";
 import swagger from "@elysiajs/swagger";
+import { createClient } from "@supabase/supabase-js";
 import { Elysia, status, t } from "elysia";
 
-const rutaDeBaseDeDatos = "./src/data/ease_tec.db";
-const db = new Database(rutaDeBaseDeDatos);
+const supabaseUrl = Bun.env.SUPABASE_URL as string;
+const supabaseKey = Bun.env.SUPABASE_KEY as string;
+
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 const app = new Elysia()
   .use(swagger())
@@ -13,224 +15,168 @@ const app = new Elysia()
 
   .get("/", () => "Api para los productos de Eese-Tec")
 
-  .get("/categoria", () => {
-    try {
-      const solicitudDeCategorias = db.query("SELECT * FROM categorias;");
+  .get("/categoria", async () => {
+    const { data: categorias, error } = await supabase
+      .from("categorias")
+      .select("id_categoria, nombre_categoria, descripcion");
 
-      const categorias = solicitudDeCategorias.all();
-
-      return categorias;
-    } catch (error) {
-      console.error(`Error al obtener las categoría: ${error}`);
-
-      return status(500, "Error interno del servidor");
-    }
-  })
-
-  .get("/producto", () => {
-    try {
-      const solicitudDeProductos = db.query(`
-        SELECT
-          id_producto,
-          nombre_producto,
-          A.descripcion,
-          url_imagen,
-          precio,
-          stock,
-          nombre_categoria
-        FROM
-          productos AS A
-            JOIN
-          categorias AS B
-            ON A.id_categoria = B.id_categoria;
+    if (error !== null) {
+      console.error(`
+        Error al obtener la categoria:
+        ${error}
         `);
 
-      const productos = solicitudDeProductos.all();
+      return status(500, "Error interno del servidor");
+    }
 
-      return status(200, productos);
-    } catch (error) {
-      console.error(`Error al obtener al producto: ${error}`);
+    return categorias;
+  })
+
+  .get("/producto", async () => {
+    const { data: productos, error } = await supabase
+      .from("v_productos")
+      .select();
+
+    if (error !== null) {
+      console.error(`
+        Erro al obtener los productos:
+        ${error}
+        `);
 
       return status(500, "Error interno del servidor");
     }
+
+    return productos;
   })
 
   .post(
     "/producto",
-    ({
-      body: {
-        nuevo_nombre,
-        nuevo_precio_venta,
-        nuevo_stock_actual,
-        nuevo_id_categoria,
-        nuevo_descripcion,
-        nuevo_url_img,
-      },
-    }) => {
-      try {
-        const solicitudDeNuevoProducto = db.query(`
-        INSERT INTO productos
-          (nombre_producto, descripcion, url_imagen,precio, stock, id_categoria)
-        VALUES
-          ($nombre_producto, $descripcion, $url_imagen, $precio, $stock, $id_categoria);
-      `);
+    async ({ body }) => {
+      const {
+        nuevoNombre,
+        nuevoDescripcion,
+        nuevoIdCategoria,
+        nuevoUrlImg,
+        nuevoPrecio,
+        nuevoStock,
+      } = body;
 
-        solicitudDeNuevoProducto.run({
-          $nombre_producto: nuevo_nombre,
-          $descripcion: nuevo_descripcion ?? null,
-          $url_imagen: nuevo_url_img ?? null,
-          $precio: nuevo_precio_venta,
-          $stock: nuevo_stock_actual,
-          $id_categoria: nuevo_id_categoria,
-        });
+      const { error } = await supabase.from("productos").insert({
+        nombre_producto: nuevoNombre,
+        descripcion: nuevoDescripcion ?? null,
+        id_categoria: nuevoIdCategoria,
+        url_imagen: nuevoUrlImg ?? null,
+        precio: nuevoPrecio,
+        stock: nuevoStock,
+      });
 
-        return status(201, "Creado exitosamente");
-      } catch (error) {
-        console.error(`Error al agregar: ${error}`);
+      if (error !== null) {
+        console.error("Erro al insertar nuevo producto:", error);
 
         return status(500, "Error interno del servidor");
       }
+
+      return "Producto creado correctamente";
     },
     {
       body: t.Object({
-        nuevo_nombre: t.String(),
-        nuevo_descripcion: t.Optional(t.String()),
-        nuevo_url_img: t.Optional(t.String()),
-        nuevo_precio_venta: t.Numeric(),
-        nuevo_stock_actual: t.Integer(),
-        nuevo_id_categoria: t.Integer(),
+        nuevoNombre: t.String({ error: "Solo se acepta texto" }),
+        nuevoDescripcion: t.Optional(t.String()),
+        nuevoUrlImg: t.Optional(t.String()),
+        nuevoPrecio: t.Numeric(),
+        nuevoStock: t.Integer(),
+        nuevoIdCategoria: t.Integer(),
       }),
     },
   )
 
   .get(
     "/producto/:id",
-    ({ params: { id } }) => {
-      try {
-        const solicitudDeProductoPorId = db.query(`
-          SELECT
-           id_producto ,nombre_producto, A.descripcion, url_imagen, precio, stock, nombre_categoria
-          FROM
-            productos AS A
-              JOIN
-            categorias AS B
-              ON A.id_categoria = B.id_categoria
-          WHERE
-            A.id_producto = ?;
-        `);
+    async ({ params: { id } }) => {
+      const { data: producto, error } = await supabase
+        .from("v_productos")
+        .select()
+        .eq("id", id);
 
-        const producto = solicitudDeProductoPorId.get(id);
-
-        return producto ?? status(404, "Producto no encontrado");
-      } catch (error) {
-        console.error(`Error al obtener al producto: ${error}`);
+      if (error !== null) {
+        console.error(`
+          Error al obtener el producto:
+          ${error}
+          `);
 
         return status(500, "Error interno del servidor");
       }
+
+      if (producto.length === 0) {
+        return status(404, `El producto con el ID ${id} no fue encontrado.`);
+      }
+
+      return producto[0];
     },
     {
-      params: t.Object({ id: t.Integer() }),
+      params: t.Object({
+        id: t.Integer({ minimum: 1, error: "Solo valores mayores a 0" }),
+      }),
     },
   )
 
   .put(
     "/producto/:id",
-    ({
-      params: { id },
-      body: {
-        id_categoria,
-        nombre_producto,
-        descripcion,
-        precio_venta,
-        stock_actual,
-        url_imagen,
-      },
-    }) => {
-      try {
-        const productoParaActualizar = db
-          .query(
-            "SELECT id_producto, id_categoria FROM productos WHERE id_producto = ?;",
-          )
-          .get(id) as { id_producto: number; id_categoria: number };
+    async ({ params, body }) => {
+      const { id } = params;
 
-        if (productoParaActualizar.id_producto >= 25) {
-          return "Llegaste al límite. Solicita más recurso a tu Programador";
-        }
+      const { nombre, descripcion, urlImagen, idCategoria, precio, stock } =
+        body;
 
-        if (!productoParaActualizar) {
-          return status(404, "Producto no encontrado");
-        }
+      const actualizarProducto: Record<string, string | number> = {};
 
-        if (id_categoria !== undefined) {
-          const categoriaParaActualizar = db
-            .query(
-              "SELECT id_categoria FROM categorias WHERE id_categoria = ?;",
-            )
-            .get(id_categoria);
-
-          if (!categoriaParaActualizar) {
-            return status(400, "Categoría no encontrada");
-          }
-        }
-
-        const camposParaActualizar: string[] = [];
-        const valorParaAgregar: (number | string)[] = [];
-
-        if (nombre_producto !== undefined) {
-          camposParaActualizar.push("nombre_producto = $nombre");
-          valorParaAgregar.push(nombre_producto);
-        }
-        if (descripcion !== undefined) {
-          camposParaActualizar.push("descripcion = $descripcion");
-          valorParaAgregar.push(descripcion);
-        }
-        if (url_imagen !== undefined) {
-          camposParaActualizar.push("url_imagen = $url_imagen");
-          valorParaAgregar.push(url_imagen);
-        }
-        if (precio_venta !== undefined) {
-          camposParaActualizar.push("precio = $precio");
-          valorParaAgregar.push(precio_venta);
-        }
-        if (stock_actual !== undefined) {
-          camposParaActualizar.push("stock = $stock");
-          valorParaAgregar.push(stock_actual);
-        }
-        if (id_categoria !== undefined) {
-          camposParaActualizar.push("id_categoria = $id_categoria");
-          valorParaAgregar.push(id_categoria);
-        }
-
-        if (camposParaActualizar.length === 0) {
-          return status(400, "No hay datos para actualizar");
-        }
-
-        valorParaAgregar.push(id);
-
-        const putQuery = db.query(`
-          UPDATE productos
-          SET ${camposParaActualizar.join(", ")}
-          WHERE id_producto = ?;
-        `);
-
-        putQuery.run(...valorParaAgregar);
-
-        return "Actualizado con éxito";
-      } catch (error) {
-        console.error(`Error al actualizar producto: ${error}`);
-
-        return status(505, "Error del servidor");
+      if (nombre !== undefined) {
+        actualizarProducto.nombre_producto = nombre;
       }
+      if (descripcion !== undefined) {
+        actualizarProducto.descripcion = descripcion;
+      }
+      if (urlImagen !== undefined) {
+        actualizarProducto.url_imagen = urlImagen;
+      }
+      if (idCategoria !== undefined) {
+        actualizarProducto.id_categoria = idCategoria;
+      }
+      if (precio !== undefined) {
+        actualizarProducto.precio = precio;
+      }
+      if (stock !== undefined) {
+        actualizarProducto.stock = stock;
+      }
+
+      if (Object.keys(actualizarProducto).length === 0) {
+        return status(400, "No se proporcionó datos para actualizar");
+      }
+
+      const { error } = await supabase
+        .from("productos")
+        .update(actualizarProducto)
+        .eq("id_producto", id);
+
+      if (error !== null) {
+        console.error("Erro al actualizar producto:", error);
+
+        return status(500, "Error interno del servidor");
+      }
+
+      return "Actualizado correctamente";
     },
     {
-      params: t.Object({ id: t.Integer() }),
+      params: t.Object({
+        id: t.Integer({ error: "Solo número mayores a cero", minimum: 0 }),
+      }),
       body: t.Object({
-        nombre_producto: t.Optional(t.String()),
+        nombre: t.Optional(t.String()),
         descripcion: t.Optional(t.String()),
-        url_imagen: t.Optional(t.String()),
-        precio_venta: t.Optional(t.Numeric()),
-        stock_actual: t.Optional(t.Integer()),
-        id_categoria: t.Optional(t.Integer()),
+        urlImagen: t.Optional(t.String()),
+        precio: t.Optional(t.Numeric()),
+        stock: t.Optional(t.Integer()),
+        idCategoria: t.Optional(t.Integer()),
       }),
     },
   )
